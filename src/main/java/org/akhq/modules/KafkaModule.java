@@ -14,11 +14,10 @@ import io.confluent.kafka.schemaregistry.json.JsonSchemaProvider;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchemaProvider;
 import io.confluent.ksql.api.client.Client;
 import io.confluent.ksql.api.client.ClientOptions;
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
 import org.akhq.configs.AbstractProperties;
 import org.akhq.configs.Connection;
 import org.akhq.configs.Default;
+import org.akhq.utils.AesDecrypterDeserializer;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -30,8 +29,15 @@ import org.codehaus.httpcache4j.uri.URIBuilder;
 import org.sourcelab.kafka.connect.apiclient.Configuration;
 import org.sourcelab.kafka.connect.apiclient.KafkaConnectClient;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 @Singleton
@@ -143,15 +149,34 @@ public class KafkaModule {
         props.putAll(properties);
 
         if (props.containsKey(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG) &&
-                props.containsKey(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG) ) {
+            props.containsKey(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG) ) {
             return new KafkaConsumer<>(props);
         } else {
             return new KafkaConsumer<>(
-                    props,
-                    new ByteArrayDeserializer(),
-                    new ByteArrayDeserializer()
-                    );
+                props,
+                new ByteArrayDeserializer(),
+                new ByteArrayDeserializer()
+            );
         }
+    }
+
+    public KafkaConsumer<byte[], byte[]> getDecryptingConsumer(String clusterId) throws InvalidClusterException {
+        return getDecryptingConsumer(clusterId, new Properties());
+    }
+
+    public KafkaConsumer<byte[], byte[]> getDecryptingConsumer(String clusterId, Properties properties) throws InvalidClusterException {
+        if (!this.clusterExists(clusterId)) {
+            throw new InvalidClusterException(INVALID_CLUSTER + clusterId + "'");
+        }
+
+        Properties props = this.getConsumerProperties(clusterId);
+        props.putAll(properties);
+
+        return new KafkaConsumer<>(
+            props,
+            new ByteArrayDeserializer(),
+            new AesDecrypterDeserializer()
+        );
     }
 
     private final Map<String, KafkaProducer<byte[], byte[]>> producers = new HashMap<>();

@@ -102,7 +102,7 @@ public class RecordRepository extends AbstractRepository {
 
         ConcurrentHashMap<String, Record> records = new ConcurrentHashMap<>();
 
-        try (KafkaConsumer<byte[], byte[]> consumer = kafkaModule.getConsumer(clusterId)) {
+        try (KafkaConsumer<byte[], byte[]> consumer = kafkaModule.getDecryptingConsumer(clusterId)) {
             consumer.assign(topicPartitions);
 
             consumer
@@ -148,7 +148,7 @@ public class RecordRepository extends AbstractRepository {
                 put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, options.size);
             }};
 
-            try (KafkaConsumer<byte[], byte[]> consumer = this.kafkaModule.getConsumer(options.clusterId, properties)) {
+            try (KafkaConsumer<byte[], byte[]> consumer = this.kafkaModule.getDecryptingConsumer(options.clusterId, properties)) {
                 consumer.assign(List.of(partition.getKey()));
                 consumer.seek(partition.getKey(), partition.getValue());
 
@@ -216,7 +216,7 @@ public class RecordRepository extends AbstractRepository {
                 put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
             }};
 
-            try (KafkaConsumer<byte[], byte[]> consumer = kafkaModule.getConsumer(clusterId, properties)) {
+            try (KafkaConsumer<byte[], byte[]> consumer = kafkaModule.getDecryptingConsumer(clusterId, properties)) {
                 consumer.assign(partitions.keySet());
                 partitions.forEach(consumer::seek);
 
@@ -270,7 +270,7 @@ public class RecordRepository extends AbstractRepository {
             .parallelStream()
             .map(partition -> {
                 KafkaConsumer<byte[], byte[]> consumer =
-                    this.kafkaModule.getConsumer(options.clusterId, new Properties() {{
+                    this.kafkaModule.getDecryptingConsumer(options.clusterId, new Properties() {{
                         put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, options.size);
                     }});
 
@@ -959,7 +959,7 @@ public class RecordRepository extends AbstractRepository {
 
     public Flowable<Event<TailEvent>> tail(String clusterId, TailOptions options) {
         return Flowable.generate(() -> {
-            KafkaConsumer<byte[], byte[]> consumer = this.kafkaModule.getConsumer(options.clusterId);
+            KafkaConsumer<byte[], byte[]> consumer = this.kafkaModule.getDecryptingConsumer(options.clusterId);
 
             Map<String, Topic> topics = topicRepository.findByName(clusterId, options.topics).stream()
                     .collect(Collectors.toMap(Topic::getName, Function.identity()));
