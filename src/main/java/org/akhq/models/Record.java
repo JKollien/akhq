@@ -14,8 +14,14 @@ import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;
 import kafka.coordinator.group.GroupMetadataManager;
 import kafka.coordinator.transaction.BaseKey;
 import kafka.coordinator.transaction.TransactionLog;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.akhq.configs.SchemaRegistryType;
+import org.akhq.utils.AesDecrypterDeserializer;
 import org.akhq.utils.AvroToJsonDeserializer;
 import org.akhq.utils.AvroToJsonSerializer;
 import org.akhq.utils.ContentUtils;
@@ -31,7 +37,13 @@ import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ToString
@@ -173,7 +185,8 @@ public class Record {
 
     public String getValue() {
         if (this.value == null) {
-            this.value = convertToString(bytesValue, valueSchemaId, false);
+            // FIXME: this.value = convertToString(bytesValue, valueSchemaId, false);
+            this.value = AesDecrypterDeserializer.deserialize(headers, bytesValue);
         }
 
         return this.value;

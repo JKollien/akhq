@@ -44,6 +44,7 @@ public class ContentUtils {
      */
     private static Long asLong(byte[] value) {
         return value != null ? ByteBuffer.wrap(value).getLong() : null;
+//         FIXME: return value != null ? ByteBuffer.wrap(value, 0, value.length).getLong() : null;
     }
 
     /**
@@ -77,7 +78,7 @@ public class ContentUtils {
         if (value != null) {
             try {
                 if (ContentUtils.isValidUTF8(value)) {
-                    valueAsObject = new String(value);
+                    valueAsObject = new String(value, StandardCharsets.UTF_8);
                 } else {
                     try {
                         valueAsObject = ContentUtils.asLong(value);
