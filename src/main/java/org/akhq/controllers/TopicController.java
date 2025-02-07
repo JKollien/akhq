@@ -13,7 +13,11 @@ import io.micronaut.core.util.StringUtils;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MediaType;
-import io.micronaut.http.annotation.*;
+import io.micronaut.http.annotation.Body;
+import io.micronaut.http.annotation.Controller;
+import io.micronaut.http.annotation.Delete;
+import io.micronaut.http.annotation.Get;
+import io.micronaut.http.annotation.Post;
 import io.micronaut.http.server.types.files.StreamedFile;
 import io.micronaut.http.sse.Event;
 import io.micronaut.scheduling.TaskExecutors;
@@ -22,12 +26,30 @@ import io.micronaut.security.annotation.Secured;
 import io.micronaut.security.rules.SecurityRule;
 import io.reactivex.schedulers.Schedulers;
 import io.swagger.v3.oas.annotations.Operation;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.akhq.configs.security.Role;
-import org.akhq.models.*;
+import org.akhq.models.AccessControl;
+import org.akhq.models.Config;
+import org.akhq.models.ConsumerGroup;
+import org.akhq.models.KeyValue;
+import org.akhq.models.LogDir;
+import org.akhq.models.Partition;
+import org.akhq.models.Record;
+import org.akhq.models.Topic;
+import org.akhq.models.TopicPartition;
 import org.akhq.modules.AbstractKafkaWrapper;
-import org.akhq.repositories.*;
+import org.akhq.repositories.AccessControlListRepository;
+import org.akhq.repositories.ConfigRepository;
+import org.akhq.repositories.ConsumerGroupRepository;
+import org.akhq.repositories.RecordRepository;
+import org.akhq.repositories.SchemaRegistryRepository;
+import org.akhq.repositories.TopicRepository;
 import org.akhq.security.annotation.AKHQSecured;
+import org.akhq.utils.ContentUtils;
 import org.akhq.utils.Pagination;
 import org.akhq.utils.ResultNextList;
 import org.akhq.utils.ResultPagedList;
@@ -35,16 +57,24 @@ import org.akhq.utils.TopicDataResultNextList;
 import org.apache.kafka.common.resource.ResourceType;
 import org.codehaus.httpcache4j.uri.URIBuilder;
 import org.reactivestreams.Publisher;
-import org.akhq.models.Record;
-
-import java.io.*;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 import jakarta.inject.Inject;
+import java.io.IOException;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Secured(SecurityRule.IS_AUTHENTICATED)
 @Controller
@@ -178,24 +208,90 @@ public class TopicController extends AbstractController {
         Topic targetTopic = topicRepository.findByName(cluster, topicName);
         return
             this.recordRepository.produce(
+                    cluster,
+                    topicName,
+                    value,
+                    headers,
+                    key,
+                    partition,
+                    timestamp.map(r -> Instant.parse(r).toEpochMilli()),
+                    keySchema,
+                    valueSchema,
+                    multiMessage,
+                    keyValueSeparator).stream()
+                .map(recordMetadata -> new Record(recordMetadata,
+                    schemaRegistryRepository.getSchemaRegistryType(cluster),
+                    key.map(String::getBytes).orElse(null),
+                    value.map(ContentUtils::hexToBytes).orElse(null),
+                    headers,
+                    targetTopic, null))
+                .collect(Collectors.toList());
+    }
+
+    @AKHQSecured(resource = Role.Resource.TOPIC_DATA, action = Role.Action.CREATE)
+    @Post(value = "api/{cluster}/topic/{topicName}/data/{duplicationFactor}")
+    @Operation(tags = {"topic data"}, summary = "Produce data to a topic")
+    public List<Record> produce(
+        HttpRequest<?> request,
+        String cluster,
+        String topicName,
+        String duplicationFactor,
+        Optional<String> value,
+        Optional<String> key,
+        Optional<Integer> partition,
+        Optional<String> timestamp,
+        List<KeyValue<String, String>> headers,
+        Optional<String> keySchema,
+        Optional<String> valueSchema,
+        Boolean multiMessage,
+        Optional<String> keyValueSeparator
+    ) throws ExecutionException, InterruptedException, RestClientException, IOException {
+        checkIfClusterAndResourceAllowed(cluster, topicName);
+
+        Topic targetTopic = topicRepository.findByName(cluster, topicName);
+
+        final AtomicInteger duplicationFactorInt = new AtomicInteger(0);
+        try {
+            duplicationFactorInt.set(Integer.parseInt(duplicationFactor));
+        } catch (NumberFormatException ignore) {
+        }
+
+        for (int i = 1; i < duplicationFactorInt.get(); i++) {
+            final int finalI = i;
+            this.recordRepository.produce(
                 cluster,
                 topicName,
                 value,
                 headers,
                 key,
                 partition,
-                timestamp.map(r -> Instant.parse(r).toEpochMilli()),
+                timestamp.map(r -> Instant.parse(r).toEpochMilli() + finalI),
                 keySchema,
                 valueSchema,
                 multiMessage,
-                keyValueSeparator).stream()
-                    .map(recordMetadata -> new Record(recordMetadata,
-                            schemaRegistryRepository.getSchemaRegistryType(cluster),
-                            key.map(String::getBytes).orElse(null),
-                            value.map(String::getBytes).orElse(null),
-                            headers,
-                            targetTopic, null))
-                    .collect(Collectors.toList());
+                keyValueSeparator);
+        }
+
+        return
+            this.recordRepository.produce(
+                    cluster,
+                    topicName,
+                    value,
+                    headers,
+                    key,
+                    partition,
+                    timestamp.map(r -> Instant.parse(r).toEpochMilli() + duplicationFactorInt.get()),
+                    keySchema,
+                    valueSchema,
+                    multiMessage,
+                    keyValueSeparator).stream()
+                .map(recordMetadata -> new Record(recordMetadata,
+                    schemaRegistryRepository.getSchemaRegistryType(cluster),
+                    key.map(String::getBytes).orElse(null),
+                    value.map(ContentUtils::hexToBytes).orElse(null),
+                    headers,
+                    targetTopic, null))
+                .collect(Collectors.toList());
     }
 
     @AKHQSecured(resource = Role.Resource.TOPIC_DATA, action = Role.Action.READ)

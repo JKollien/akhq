@@ -13,6 +13,7 @@ micronaut:
     idle-timeout: 10m
     netty:
       max-chunk-size: 10485760
+      compression-level: 9
   router:
     static-resources:
       react:

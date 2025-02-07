@@ -18,6 +18,7 @@ import { withRouter } from '../../utils/withRouter';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPause, faPlay, faRemove, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { fromEvent, map, scan } from 'rxjs';
+import xmlFormatter from 'xml-formatter';
 
 const STATUS = {
   STOPPED: 'STOPPED',
@@ -469,16 +470,24 @@ class Tail extends Root {
               {
                 id: 'value',
                 accessor: 'value',
-                colName: 'Schema',
+                colName: 'Schema (decrypted)',
                 type: 'text',
                 extraRow: true,
                 extraRowContent: (obj, index) => {
-                  let value = obj.value;
+                  let value = obj.decryptedValue;
                   try {
-                    let json = LosslessJson.parse(obj.value);
+                    let json = LosslessJson.parse(obj.decryptedValue);
                     value = LosslessJson.stringify(json, undefined, '  ');
                     // eslint-disable-next-line no-empty
-                  } catch (e) {}
+                  } catch (e) {
+                    try {
+                      let formattedXml = xmlFormatter(obj.decryptedValue, {
+                        indentation: '  ', // Indent with 2 spaces
+                        collapseContent: true
+                      });
+                      value = formattedXml;
+                    } catch (e) {}
+                  }
 
                   return (
                     <AceEditor
@@ -497,7 +506,7 @@ class Tail extends Root {
                 cell: obj => {
                   return (
                     <pre className="mb-0 khq-data-highlight">
-                      <code>{obj.value}</code>
+                      <code>{obj.decryptedValue}</code>
                     </pre>
                   );
                 }

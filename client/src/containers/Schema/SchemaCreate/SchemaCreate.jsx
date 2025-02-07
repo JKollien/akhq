@@ -111,7 +111,7 @@ class SchemaCreate extends Form {
             'col-sm-10'
           )}
 
-          {this.renderJSONInput('schemaData', 'Schema', value => {
+          {this.renderJSONOrXMLInput('schemaData', 'Schema', value => {
             this.setState({
               formData: {
                 ...formData,

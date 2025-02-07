@@ -14,6 +14,9 @@ import 'ace-builds/src-noconflict/mode-json';
 import 'ace-builds/src-noconflict/theme-merbivore_soft';
 import Root from '../Root';
 
+import * as LosslessJson from 'lossless-json';
+import xmlFormatter from "xml-formatter";
+
 class Form extends Root {
   state = {
     formData: {},
@@ -111,7 +114,7 @@ class Form extends Root {
     );
   };
 
-  renderJSONInput = (name, label, onChange, textMode, options, rest) => {
+  renderJSONOrXMLInput = (name, label, onChange, textMode, options, rest) => {
     const { formData, errors } = this.state;
     const inputMode = textMode ? 'text' : formData.schemaType === 'PROTOBUF' ? 'protobuf' : 'json';
     return (
@@ -128,11 +131,33 @@ class Form extends Root {
             setOptions={{ ...options, useWorker: false }}
             mode={inputMode}
             theme="merbivore_soft"
-            value={formData[name]}
+            value={(() => {
+              let value = formData[name]
+
+              if (name === "decryptedValue") {
+                try {
+                  let json = LosslessJson.parse(formData[name]);
+                  value = LosslessJson.stringify(json, undefined, '  ');
+                  // eslint-disable-next-line no-empty
+                } catch (e) {
+                  try {
+                    let formattedXml = xmlFormatter(formData[name], {
+                      indentation: '  ', // Indent with 2 spaces
+                      collapseContent: true
+                    });
+                    value = formattedXml;
+                  } catch (e) {
+                  }
+                }
+              }
+              return value
+            })()}
             onChange={value => {
               onChange(value);
             }}
-            name="UNIQUE_ID_OF_DIV"
+            name={(() => {
+              return "UNIQUE_ID_OF_DIV_" + name
+            })()}
             editorProps={{ $blockScrolling: true }}
             style={{ width: '100%', minHeight: '25vh' }}
             {...rest}

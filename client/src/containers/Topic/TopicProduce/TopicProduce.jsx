@@ -3,23 +3,18 @@ import Form from '../../../components/Form/Form';
 import Header from '../../Header';
 import Joi from 'joi-browser';
 import Dropdown from 'react-bootstrap/Dropdown';
-import { formatDateTime } from '../../../utils/converters';
-import { popProduceToTopicValues } from '../../../utils/localstorage';
-import {
-  uriTopics,
-  uriTopicsPartitions,
-  uriTopicsProduce,
-  uriAllSchema, uriTopicsName
-} from '../../../utils/endpoints';
+import {formatDateTime} from '../../../utils/converters';
+import {popProduceToTopicValues} from '../../../utils/localstorage';
+import {uriAllSchema, uriTopicsName, uriTopicsPartitions, uriTopicsProduce} from '../../../utils/endpoints';
 import moment from 'moment';
 import DatePicker from '../../../components/DatePicker';
-import { toast } from 'react-toastify';
+import {toast} from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Tooltip } from '@mui/material';
-import { withRouter } from '../../../utils/withRouter';
-import { format } from 'date-fns';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
+import {Tooltip} from '@mui/material';
+import {withRouter} from '../../../utils/withRouter';
+import {format} from 'date-fns';
+import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
+import {faPlus, faTrash} from '@fortawesome/free-solid-svg-icons';
 
 class TopicProduce extends Form {
   state = {
@@ -31,6 +26,7 @@ class TopicProduce extends Form {
       hKey0: '',
       hValue0: '',
       value: '',
+      decryptedValue: '',
       keyValueSeparator: ':'
     },
     datetime: new Date(),
@@ -51,7 +47,7 @@ class TopicProduce extends Form {
     topics: [],
     topicsSearchValue: '',
     multiMessage: false,
-    tombstone: false,
+    tombstone: true,
     valuePlaceholder: '{"param": "value"}',
     roles: JSON.parse(sessionStorage.getItem('roles'))
   };
@@ -62,6 +58,7 @@ class TopicProduce extends Form {
     hKey0: Joi.string().allow('').label('hKey0'),
     hValue0: Joi.string().allow('').label('hValue0'),
     value: Joi.string().allow('').label('Value'),
+    decryptedValue: Joi.string().allow('').label('Decrypted value'),
     keyValueSeparator: Joi.string().min(1).label('keyValueSeparator')
   };
 
@@ -166,12 +163,7 @@ class TopicProduce extends Form {
     } = this.state;
     const { clusterId } = this.props.params;
 
-    let value;
-    if (tombstone) {
-      value = null;
-    } else {
-      value = multiMessage ? formData.value : JSON.parse(JSON.stringify(formData.value));
-    }
+    let value = multiMessage ? formData.value : JSON.parse(JSON.stringify(formData.value));
     const topic = {
       clusterId,
       topicId,
@@ -253,7 +245,7 @@ class TopicProduce extends Form {
 
     return (
       <div className="form-group row">
-        <label className="col-sm-2 col-form-label">Tombstone</label>
+        <label className="col-sm-2 col-form-label">Tombstone (values editable)</label>
         <div className="row khq-multiple col-sm-7">
           {this.renderCheckbox(
             'isTombstone',
@@ -299,7 +291,7 @@ class TopicProduce extends Form {
   renderHeader(position) {
     return (
       <div className="row header-wrapper">
-        <label className="col-sm-2 col-form-label">{position === 0 ? 'Header' : ''}</label>
+        <label className="col-sm-2 col-form-label">{position === 0 ? 'Header (values serialized Bytes->Hex)' : ''}</label>
 
         <div className="row col-sm-10 khq-multiple pe-0">
           <div className="col-auto">
@@ -513,9 +505,9 @@ class TopicProduce extends Form {
 
           {this.renderTombstone(multiMessage)}
 
-          {this.renderJSONInput(
+          {this.renderJSONOrXMLInput(
             'value',
-            'Value',
+            'Value (serialized Bytes->Hex)',
             value => {
               this.setState({
                 formData: {
@@ -528,6 +520,23 @@ class TopicProduce extends Form {
             { placeholder: this.getPlaceholderValue(multiMessage, formData.keyValueSeparator) },
             { readOnly: tombstone }
           )}
+
+          {this.renderJSONOrXMLInput(
+            'decryptedValue',
+            'Decrypted value',
+              decryptedValue => {
+                this.setState({
+                  formData: {
+                    ...formData,
+                    decryptedValue: decryptedValue
+                  }
+                });
+              },
+            multiMessage, // true -> 'text' mode; json, protobuff, ... mode otherwise
+            { placeholder: this.getPlaceholderValue(multiMessage, formData.keyValueSeparator) },
+            { readOnly: tombstone }
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'row', width: '100%', padding: 0 }}>
             <label
               style={{ padding: 0, alignItems: 'center', display: 'flex' }}

@@ -11,11 +11,18 @@ import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.json.JsonSchema;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;
+import io.micronaut.core.util.StringUtils;
 import kafka.coordinator.group.GroupMetadataManager;
 import kafka.coordinator.transaction.BaseKey;
 import kafka.coordinator.transaction.TransactionLog;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.akhq.configs.SchemaRegistryType;
+import org.akhq.utils.AesDecrypterDeserializer;
 import org.akhq.utils.AvroToJsonDeserializer;
 import org.akhq.utils.AvroToJsonSerializer;
 import org.akhq.utils.ContentUtils;
@@ -24,14 +31,25 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.serialization.Deserializer;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ToString
@@ -54,8 +72,12 @@ public class Record {
     @JsonView(Views.Download.class)
     private String valueSchemaId;
     private String valueSubject;
+
     @JsonView(Views.Download.class)
     private List<KeyValue<String, String>> headers = new ArrayList<>();
+    @JsonIgnore
+    private Headers kafkaHeaders;
+
     @JsonIgnore
     private Deserializer kafkaAvroDeserializer;
     @JsonIgnore
@@ -89,6 +111,11 @@ public class Record {
     @Setter(AccessLevel.NONE)
     private String value;
 
+    @JsonView(Views.Download.class)
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    private String decryptedValue;
+
     @JsonIgnore
     private final List<String> exceptions = new ArrayList<>();
 
@@ -115,6 +142,22 @@ public class Record {
         this.valueSubject = getAvroSchemaSubject(this.valueSchemaId, this.bytesValue);
         this.headers = headers;
         this.truncated = false;
+
+        if (headers == null) {
+            kafkaHeaders = new RecordHeaders(Collections.emptyList());
+        } else {
+            this.kafkaHeaders = new RecordHeaders(headers
+                .stream()
+                .filter(entry -> StringUtils.isNotEmpty(entry.getKey()))
+                .map(entry -> new RecordHeader(
+                    entry.getKey(),
+                    ContentUtils.hexToBytes(entry.getValue())
+                ))
+                .collect(Collectors.toList()));
+        }
+        if (kafkaHeaders != null && kafkaHeaders.toArray().length > 0) {
+            getDecryptedValue();
+        }
     }
 
     public Record(SchemaRegistryClient client, ConsumerRecord<byte[], byte[]> record, SchemaRegistryType schemaRegistryType, Deserializer kafkaAvroDeserializer,
@@ -139,8 +182,12 @@ public class Record {
         this.valueSchemaId = getAvroSchemaId(this.bytesValue);
         this.valueSubject = getAvroSchemaSubject(this.valueSchemaId, this.bytesValue);
         for (Header header: record.headers()) {
-            String headerValue = String.valueOf(ContentUtils.convertToObject(header.value()));
+            String headerValue = ContentUtils.bytesToHex(header.value());
             this.headers.add(new KeyValue<>(header.key(), headerValue));
+        }
+        this.kafkaHeaders = record.headers();
+        if (record.headers() != null && record.headers().toArray().length > 0) {
+            getDecryptedValue();
         }
 
         this.kafkaAvroDeserializer = kafkaAvroDeserializer;
@@ -171,7 +218,7 @@ public class Record {
 
     public String getValue() {
         if (this.value == null) {
-            this.value = convertToString(bytesValue, valueSchemaId, false);
+            this.value = ContentUtils.bytesToHex(bytesValue);
         }
 
         return this.value;
@@ -179,6 +226,22 @@ public class Record {
 
     public void setValue(String value) {
         this.value = value;
+    }
+
+    public String getDecryptedValue() {
+        if (this.kafkaHeaders == null || this.kafkaHeaders.toArray().length == 0) {
+            return "Kafka headers not available at this point please reload record from topic";
+        }
+
+        if (this.decryptedValue == null) {
+            this.decryptedValue = AesDecrypterDeserializer.deserialize(kafkaHeaders, bytesValue);
+        }
+
+        return this.decryptedValue;
+    }
+
+    public void setDecryptedValue(String decryptedValue) {
+        this.decryptedValue = decryptedValue;
     }
 
     public void setKey(String key) {

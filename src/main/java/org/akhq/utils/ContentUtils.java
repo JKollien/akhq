@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 public class ContentUtils {
+
     private static final byte[] HEX_ARRAY = "0123456789ABCDEF".getBytes(StandardCharsets.US_ASCII);
 
     /**
@@ -72,6 +73,7 @@ public class ContentUtils {
      * @return  the value as an  {@code java.lang.string}, {@code int}, {@code long} or {@code short}
      */
     public static Object convertToObject(byte[] value) {
+
         Object valueAsObject = null;
 
         if (value != null) {
@@ -106,5 +108,19 @@ public class ContentUtils {
             hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
         }
         return new String(hexChars, StandardCharsets.UTF_8);
+    }
+
+    public static byte[] hexToBytes(String value) {
+        if (value == null) {
+            return new byte[0];
+        }
+
+        int len = value.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(value.charAt(i), 16) << 4)
+                + Character.digit(value.charAt(i+1), 16));
+        }
+        return data;
     }
 }

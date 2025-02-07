@@ -10,25 +10,36 @@ import io.micronaut.context.env.Environment;
 import io.micronaut.core.util.StringUtils;
 import io.micronaut.http.sse.Event;
 import io.reactivex.Flowable;
-import java.util.stream.StreamSupport;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.With;
 import lombok.extern.slf4j.Slf4j;
 import org.akhq.configs.SchemaRegistryType;
 import org.akhq.controllers.TopicController;
 import org.akhq.models.KeyValue;
 import org.akhq.models.Partition;
 import org.akhq.models.Record;
-import org.akhq.models.Topic;
 import org.akhq.models.Schema;
+import org.akhq.models.Topic;
 import org.akhq.modules.KafkaModule;
-import org.akhq.modules.schemaregistry.SchemaSerializer;
 import org.akhq.modules.schemaregistry.RecordWithSchemaSerializerFactory;
+import org.akhq.modules.schemaregistry.SchemaSerializer;
 import org.akhq.utils.AvroToJsonSerializer;
+import org.akhq.utils.ContentUtils;
 import org.akhq.utils.Debug;
 import org.akhq.utils.MaskingUtils;
 import org.apache.kafka.clients.admin.DeletedRecords;
 import org.apache.kafka.clients.admin.RecordsToDelete;
-import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -37,9 +48,21 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.codehaus.httpcache4j.uri.URIBuilder;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,8 +70,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
+import java.util.stream.StreamSupport;
 
 @Singleton
 @Slf4j
@@ -540,7 +562,7 @@ public class RecordRepository extends AbstractRepository {
                     .filter(entry -> StringUtils.isNotEmpty(entry.getKey()))
                     .map(entry -> new RecordHeader(
                         entry.getKey(),
-                        entry.getValue() == null ? null : entry.getValue().getBytes()
+                        ContentUtils.hexToBytes(entry.getValue())
                     ))
                     .collect(Collectors.toList())
             ))
@@ -632,13 +654,7 @@ public class RecordRepository extends AbstractRepository {
             }
         }
 
-        if (value.isPresent() && valueSchema.isPresent() && StringUtils.isNotEmpty(valueSchema.get())) {
-            Schema schema = schemaRegistryRepository.getLatestVersion(clusterId, valueSchema.get());
-            SchemaSerializer valueSerializer = serializerFactory.createSerializer(clusterId, schema.getId());
-            valueAsBytes = valueSerializer.serialize(value.get());
-        } else {
-            valueAsBytes = value.filter(Predicate.not(String::isEmpty)).map(String::getBytes).orElse(null);
-        }
+        valueAsBytes = value.filter(Predicate.not(String::isEmpty)).map(ContentUtils::hexToBytes).orElse(null);
 
         return produce(clusterId, topic, valueAsBytes, headers, keyAsBytes, partition, timestamp);
     }

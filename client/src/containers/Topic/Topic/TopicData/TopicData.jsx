@@ -43,6 +43,7 @@ import {
   faSpinner
 } from '@fortawesome/free-solid-svg-icons';
 import { fromEvent, map, scan } from 'rxjs';
+import xmlFormatter from "xml-formatter";
 
 class TopicData extends Root {
   state = {
@@ -553,7 +554,8 @@ class TopicData extends Root {
       headers: row.headers,
       keySchema: row.schema.key,
       valueSchema: row.schema.value,
-      value: row.value
+      value: row.value,
+      decryptedValue: row.decryptedValue
     };
     setProduceToTopicValues(data);
 
@@ -599,6 +601,7 @@ class TopicData extends Root {
       value: message.truncated
         ? message.value + '...\nToo large message. Full body in share button.' || ''
         : message.value || '',
+      decryptedValue: message.decryptedValue,
       timestamp: message.timestamp,
       partition: JSON.stringify(message.partition) || '',
       offset: JSON.stringify(message.offset) || '',
@@ -1225,16 +1228,24 @@ class TopicData extends Root {
               {
                 id: 'value',
                 accessor: 'value',
-                colName: 'Value',
+                colName: 'Value (decrypted)',
                 type: 'text',
                 extraRow: true,
                 extraRowContent: (obj, index) => {
-                  let value = obj.value;
+                  let value = obj.decryptedValue;
                   try {
-                    let json = LosslessJson.parse(obj.value);
+                    let json = LosslessJson.parse(obj.decryptedValue);
                     value = LosslessJson.stringify(json, undefined, '  ');
                     // eslint-disable-next-line no-empty
-                  } catch (e) {}
+                  } catch (e) {
+                    try {
+                      let formattedXml = xmlFormatter(obj.decryptedValue, {
+                        indentation: '  ', // Indent with 2 spaces
+                        collapseContent: true
+                      });
+                      value = formattedXml;
+                    } catch (e) {}
+                  }
 
                   return (
                     <AceEditor
@@ -1261,7 +1272,7 @@ class TopicData extends Root {
                         ></div>
                       )}
                       <pre className="mb-0 khq-data-highlight">
-                        <code>{obj.value ?? 'null'}</code>
+                        <code>{obj.decryptedValue ?? 'null'}</code>
                       </pre>
                     </div>
                   );

@@ -131,7 +131,7 @@ class SchemaUpdate extends Form {
             },
             'col-sm-10'
           )}
-          {this.renderJSONInput(
+          {this.renderJSONOrXMLInput(
             'schema',
             'Latest Schema',
             value => {
